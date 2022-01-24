@@ -60,7 +60,40 @@ def optimize_trajectory(time_weight=1.0, verbose=True):
     # `pack_decision_variables` and `unpack_decision_variables` useful.
 
     # WRITE YOUR CODE BELOW ###################################################
-    raise NotImplementedError
+    class KinematicModel:
+        def __call__(self, state, control):
+            x,y,th = state
+            V,om = control
+            return np.array([V*np.cos(th), V*np.sin(th), om])
+    
+    kinematics = KinematicModel()
+    
+    def cost(z):
+        tf, s, u = unpack_decision_variables(z)
+        return tf*time_weight + (tf/N)*np.sum(np.square(u))
+    
+    def constraints(z):
+        tf, state, controls = unpack_decision_variables(z)
+        constraint_list = [state[0] - s_0, state[-1] - s_f]
+        for i in range(N):
+            constraint_list.append(state[i+1] - (state[i] + (tf/N)*kinematics(state[i], controls[i])))
+        return np.concatenate(constraint_list)
+    
+    z_guess = pack_decision_variables(20, np.linspace(s_0,s_f,N+1), np.ones((N,2)))
+    z_iterates = [z_guess]
+    bnds = [(0,np.inf)] + [(-np.inf,np.inf),(-np.inf,np.inf),(-2*np.pi,2*np.pi)]*(N+1) + [(-v_max,v_max),(-om_max,om_max)]*(N)
+    
+    result = minimize(cost, 
+                      z_guess, 
+                      method=None, 
+                      bounds=bnds, 
+                      constraints={'type':'eq','fun':constraints}, 
+                      options = {'maxiter':1000}, 
+                      callback=lambda z:z_iterates.append(z))
+    
+    z_iterates = np.stack(z_iterates)
+    z = result.x
+    return (unpack_decision_variables(z))
     ###########################################################################
 
 
